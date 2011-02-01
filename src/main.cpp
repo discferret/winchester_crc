@@ -225,38 +225,34 @@ int main(void)
 	// the record.
 	size_t shifts = 0;
 	while (shifts <= sizeof(ec_z)*8) {
-		// 14. Shift the ECC once by setting R71=02h and increment a software counter
-		c = crc32_bit(c, (bitswap(0x140A0445)<<1)|1, 0); shifts++;
-		// 15. Test to see if software counter > record length. If yes, error is uncorrectable.
-//		if (shifts > (sizeof(ec_z)*8)) break;
-		// 16. Test to see if R72=0 (ECC bits 0-23). If yes, continue to step 17, else go to step 14
-		// 17. Test to see if R73 bits 0,1,2 are 0. If yes, continue, else go to step 14
-		if ((c & 0x03FFFFFF) != 0) continue;
-		// TA DA!
-		printf("error syn %08X\n", c);
-		break;
+		// Shift a zero bit into the ECC with Feedback enabled and increment the shift counter
+		c = crc32_bit(c, (bitswap(0x140A0445)<<1)|1, 0);
+		shifts++;
+		// If all but the top five ECC SR bits are zero, we've found the error syndrome.
+		if ((c & 0x03FFFFFF) == 0) break;
 	}
 
+	// Test to see if software counter > record length. If yes, error is uncorrectable.
 	if (shifts > sizeof(ec_z)*8) {
 		printf("Couldn't find a valid syndrome. Error is uncorrectable.\n");
 		return -1;
 	}
 
-	// compensate for offset
+	// compensate for syndrome offset (TODO: not sure what the significance of 24 is...)
 	shifts -= 24;
 
 	// Calculate byte offset. Shift count is from the end of the sector buffer. We want offset from start.
 	// Also, C arrays are zero-based, hence the -1.
 	size_t byte_ofs = sizeof(ec_z) - (shifts/8) - 1;
 	// Calculate bit offset. We need this to realign the error pattern.
-	size_t bit_ofs = 8 - (shifts % 8);
+	size_t bit_ofs_a = 8 - (shifts % 8);
 	size_t bit_ofs_b = (shifts % 8);
-	uint8_t error_pattern_a = bitswap(c) >> (8-(shifts % 8));
-	uint8_t error_pattern_b = bitswap(c) << (shifts % 8);
+	uint8_t error_pattern_a = bitswap(c) >> bit_ofs_a;
+	uint8_t error_pattern_b = bitswap(c) << bit_ofs_b;
 
 	printf("Shift counter : %lu bits (%lu bytes, %lu remainder)\n", shifts, shifts/8, shifts%8);
 	printf("Byte offset   : %lu\n", byte_ofs);
-	printf("Bit offsets   : %lu %lu\n", bit_ofs, bit_ofs_b);
+	printf("Bit offsets   : %lu %lu\n", bit_ofs_a, bit_ofs_b);
 
 	printf("Original bytes: %02X %02X\n", ec_z[byte_ofs], ec_z[byte_ofs+1]);
 	printf("Error patterns: %02X %02X\n", error_pattern_a, error_pattern_b);
