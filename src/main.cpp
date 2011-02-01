@@ -196,7 +196,7 @@ int main(void)
 	// 0a. CRC a data block
 	unsigned char ec_z[] = {0xa1, 0xf8, 1,2,3,4,5,6,7,8,9,10, 0, 0, 0, 0};
 	uint32_t c = crc32(0xFFFFFFFF, 0x140A0445, ec_z, sizeof(ec_z)-4);
-	for (int i=sizeof(ec_z)-4; i<sizeof(ec_z); i++) {
+	for (size_t i=sizeof(ec_z)-4; i<sizeof(ec_z); i++) {
 		ec_z[i] = (c >> 24);
 		c <<= 8;
 	}
@@ -254,9 +254,9 @@ int main(void)
 	uint8_t error_pattern_a = bitswap(c) >> (8-(shifts % 8));
 	uint8_t error_pattern_b = bitswap(c) << (shifts % 8);
 
-	printf("Shift counter: %d bits (%d bytes, %d remainder)\n", shifts, shifts/8, shifts%8);
-	printf("Byte offset: %d\n", byte_ofs);
-	printf("Bit offsets: %d %d\n", bit_ofs, bit_ofs_b);
+	printf("Shift counter: %lu bits (%lu bytes, %lu remainder)\n", shifts, shifts/8, shifts%8);
+	printf("Byte offset: %lu\n", byte_ofs);
+	printf("Bit offsets: %lu %lu\n", bit_ofs, bit_ofs_b);
 
 	printf("Original bytes: %02X %02X\n", ec_z[byte_ofs], ec_z[byte_ofs+1]);
 	printf("Error patterns: %02X %02X\n", error_pattern_a, error_pattern_b);
