@@ -268,15 +268,5 @@ int main(void)
 	c = crc32(0xFFFFFFFF, 0x140A0445, ec_z, sizeof(ec_z));
 	printf("New CRC32:      %08X (should be zero)\n", c);
 
-/*
-	// Exhaustive search for a polynomial which produces the required output...
-	unsigned char z[] = { 0xa1, 0xf8 };
-
-	for (POLY=1; POLY<0xFFFFFFFFul; POLY++) {
-		if (crc32(0xffffffff, z, 2) == 0xB517894A) {
-			printf("HIT: poly=%08lX\n", (unsigned long)POLY);
-		}
-	}
-*/
 	return 0;
 }
