@@ -1,4 +1,6 @@
 #include <cstdio>
+#include <cctype>
+#include <cstring>
 #include <cstdint>
 
 using namespace std;
@@ -60,38 +62,120 @@ uint32_t bitswap(const uint32_t v)
 
 ////////////////////////////////
 
-uint32_t POLY = 0x140A0445;
+enum {
+	DIR_FORWARDS,
+	DIR_REVERSE
+};
 
-uint32_t crc32(uint32_t initval, unsigned char * data, size_t len)
+uint32_t crc32_rev(const uint32_t initval, const uint32_t poly, const unsigned char *data, const size_t len, int dir)
 {
 	uint32_t crc = initval;
-	size_t i = 0;
+	ssize_t i = len;
+	const unsigned char *d = data;
 
-	while (i < len) {
-		unsigned char x = data[i++];
+	while (i-- > 0) {
+		unsigned char x = *(d++);
 
 		for (int j=0; j<8; j++) {
-			unsigned char feedback = (crc >> 31) ^ (x >> 7);
+			unsigned char feedback = (crc >> 31) ^ (dir == DIR_FORWARDS ? (x >> 7) : (x & 1));
 
 			crc = (crc << 1);
 
 			if (feedback)
-				crc ^= POLY;
+				crc ^= poly;
 
-			x <<= 1;
+			x = (dir == DIR_FORWARDS) ? x << 1 : x >> 1;
 		}
 	}
 
 	return crc;
 }
 
+uint32_t crc32_rev(const uint32_t initval, const uint32_t poly, const unsigned char *data, const size_t len)
+{
+	return crc32_rev(initval, poly, data, len, DIR_FORWARDS);
+}
+
+uint32_t crc32_rev_bit(const uint32_t initval, const uint32_t poly, char bit)
+{
+	uint32_t crc = initval;
+
+	unsigned char feedback = (crc >> 31) ^ (bit & 1);
+	crc = (crc << 1);
+	if (feedback)
+		crc ^= poly;
+
+	return crc;
+}
+
+void hex_dump(void *data, int size)
+{
+	/* dumps size bytes of *data to stdout. Looks like:
+	 * [0000] 75 6E 6B 6E 6F 77 6E 20
+	 *                  30 FF 00 00 00 00 39 00 unknown 0.....9.
+	 * (in a single line of course)
+	 */
+
+	unsigned char *p = (unsigned char *)data;
+	unsigned long addr = 0;
+	unsigned char c;
+	int n;
+	char bytestr[4] = {0};
+	char addrstr[10] = {0};
+	char hexstr[ 16*3 + 5] = {0};
+	char charstr[16*1 + 5] = {0};
+	for(n=1;n<=size;n++) {
+		if (n%16 == 1) {
+			/* store address for this line */
+			snprintf(addrstr, sizeof(addrstr), "%.4lX",
+			   addr);
+		}
+
+		c = *p;
+		if (isprint(c) == 0) {
+			c = '.';
+		}
+
+		/* store hex str (for left side) */
+		snprintf(bytestr, sizeof(bytestr), "%02X ", *p);
+		strncat(hexstr, bytestr, sizeof(hexstr)-strlen(hexstr)-1);
+
+		/* store char str (for right side) */
+		snprintf(bytestr, sizeof(bytestr), "%c", c);
+		strncat(charstr, bytestr, sizeof(charstr)-strlen(charstr)-1);
+
+		if(n%16 == 0) { 
+			/* line completed */
+			printf("[%4.4s]   %-50.50s  %s\n", addrstr, hexstr, charstr);
+			hexstr[0] = 0;
+			charstr[0] = 0;
+		} else if(n%8 == 0) {
+			/* half line: add whitespaces */
+			strncat(hexstr, "  ", sizeof(hexstr)-strlen(hexstr)-1);
+			strncat(charstr, " ", sizeof(charstr)-strlen(charstr)-1);
+		}
+		p++; /* next byte */
+		addr++; /* increment address */
+	}
+
+	if (strlen(hexstr) > 0) {
+		/* print rest of buffer if not empty */
+		printf("[%4.4s]   %-50.50s  %s\n", addrstr, hexstr, charstr);
+	}
+}
+
 //////////////////////////////////
 
 int main(void)
 {
+	printf("\n\n"
+			"#######################\n"
+			"# CRC GENERATION TEST #\n"
+			"#######################\n\n");
+
 	unsigned char z[] = { 0xa1, 0xf8 };
 	printf("%08X  [target]\n", 0xb517894a);
-	printf("%08X  [calculated]\n", crc32(0xffffffff, z, 2));
+	printf("%08X  [calculated]\n", crc32_rev(0xffffffff, 0x140A0445, z, 2));
 
 	printf("%02X%02X%02X%02X  [target]\n",
 			data_array[512+2],
@@ -110,7 +194,89 @@ int main(void)
 	 *
 	 * Interesting factoid: crc32(concat(data, crc32(data))) == 0.
 	 */
-	printf("%08X  [calculated]\n", crc32(0xffffffff, data_array, 512+2));
+	printf("%08X  [calculated]\n", crc32_rev(0xffffffff, 0x140A0445, data_array, 512+2));
+
+	// Try and do an error-correction run
+	printf("\n\n"
+			"#########################\n"
+			"# ERROR CORRECTION TEST #\n"
+			"#########################\n\n");
+
+	// --- Preparation ---
+	// 0a. CRC a data block
+	unsigned char ec_z[] = {0xa1, 0xf8, 1,2,3,4,5,6,7,8,9,10, 0, 0, 0, 0};
+	uint32_t c = crc32_rev(0xFFFFFFFF, 0x140A0445, ec_z, sizeof(ec_z)-4);
+	for (int i=sizeof(ec_z)-4; i<sizeof(ec_z); i++) {
+		ec_z[i] = (c >> 24);
+		c <<= 8;
+	}
+
+	hex_dump(ec_z, sizeof(ec_z));
+
+	// 0b. Clobber some data. Max error span = 5 bits
+	ec_z[8] ^= 0x0b;
+	ec_z[9] ^= 0x80;
+
+	// 0c. Recalculate the CRC as if we just read the track. This gets us
+	// the CRC syndrome.
+	// If the track were error-free, the syndrome would be zero.
+	c = crc32_rev(0xFFFFFFFF, 0x140A0445, ec_z, sizeof(ec_z));
+	printf("CRC syndrome: %08X\n", c);
+
+	// 1. Offload the 32bit syndrome into local RAM
+	// 2. Shift the syndrome back into the ECC register in reverse order
+	c = bitswap(c);
+
+	// 3. Change the ECC polynomial from forward to reciprocal
+//	POLY = (bitswap(POLY) << 1) | 1;
+
+	// 4. Shift the ECC until all bits except the high order bits are zero
+	// or the number of shifts becomes greater than the number of bits in
+	// the record.
+	size_t shifts = 0;
+	while (shifts <= sizeof(ec_z)*8) {
+		// 14. Shift the ECC once by setting R71=02h and increment a software counter
+		c = crc32_rev_bit(c, (bitswap(0x140A0445)<<1)|1, 0); shifts++;
+		// 15. Test to see if software counter > record length. If yes, error is uncorrectable.
+//		if (shifts > (sizeof(ec_z)*8)) break;
+		// 16. Test to see if R72=0 (ECC bits 0-23). If yes, continue to step 17, else go to step 14
+		// 17. Test to see if R73 bits 0,1,2 are 0. If yes, continue, else go to step 14
+		if ((c & 0x03FFFFFF) != 0) continue;
+		// TA DA!
+		printf("error syn %08X\n", c);
+		break;
+	}
+
+	if (shifts > sizeof(ec_z)*8) {
+		printf("Couldn't find a valid syndrome. Error is uncorrectable.\n");
+		return -1;
+	}
+
+	// compensate for offset
+	shifts -= 24;
+
+	// Calculate byte offset. Shift count is from the end of the sector buffer. We want offset from start.
+	// Also, C arrays are zero-based, hence the -1.
+	size_t byte_ofs = sizeof(ec_z) - (shifts/8) - 1;
+	// Calculate bit offset. We need this to realign the error pattern.
+	size_t bit_ofs = 8 - (shifts % 8);
+	size_t bit_ofs_b = (shifts % 8);
+	uint8_t error_pattern_a = bitswap(c) >> (8-(shifts % 8));
+	uint8_t error_pattern_b = bitswap(c) << (shifts % 8);
+
+	printf("Shift counter: %d bits (%d bytes, %d remainder)\n", shifts, shifts/8, shifts%8);
+	printf("Byte offset: %d\n", byte_ofs);
+	printf("Bit offsets: %d %d\n", bit_ofs, bit_ofs_b);
+
+	printf("Original bytes: %02X %02X\n", ec_z[byte_ofs], ec_z[byte_ofs+1]);
+	printf("Error patterns: %02X %02X\n", error_pattern_a, error_pattern_b);
+	ec_z[byte_ofs] ^= error_pattern_a;
+	ec_z[byte_ofs+1] ^= error_pattern_b;
+	printf("Repaired bytes: %02X %02X\n", ec_z[byte_ofs], ec_z[byte_ofs+1]);
+
+	// Reset polynomial and recalculate CRC
+	c = crc32_rev(0xFFFFFFFF, 0x140A0445, ec_z, sizeof(ec_z));
+	printf("New CRC32:      %08X (should be zero)\n", c);
 
 /*
 	// Exhaustive search for a polynomial which produces the required output...
