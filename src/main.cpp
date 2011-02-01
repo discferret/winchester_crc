@@ -69,15 +69,16 @@ uint32_t crc32(uint32_t initval, unsigned char * data, size_t len)
 
 	while (i < len) {
 		unsigned char x = data[i++];
-		crc ^= (x << (32-8));
 
 		for (int j=0; j<8; j++) {
-			unsigned char feedback = (crc >> 31);
+			unsigned char feedback = (crc >> 31) ^ (x >> 7);
 
-			crc = crc << 1;
+			crc = (crc << 1);
 
 			if (feedback)
 				crc ^= POLY;
+
+			x <<= 1;
 		}
 	}
 
@@ -88,6 +89,10 @@ uint32_t crc32(uint32_t initval, unsigned char * data, size_t len)
 
 int main(void)
 {
+	unsigned char z[] = { 0xa1, 0xf8 };
+	printf("%08X  [target]\n", 0xb517894a);
+	printf("%08X  [calculated]\n", crc32(0xffffffff, z, 2));
+
 	printf("%02X%02X%02X%02X  [target]\n",
 			data_array[512+2],
 			data_array[513+2],
