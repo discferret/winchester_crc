@@ -211,7 +211,7 @@ int main(void)
 	// the CRC syndrome.
 	// If the track were error-free, the syndrome would be zero.
 	c = crc32(0xFFFFFFFF, 0x140A0445, ec_z, sizeof(ec_z));
-	printf("CRC syndrome: %08X\n", c);
+	printf("CRC syndrome  : %08X (should be nonzero)\n", c);
 
 	// 1. Offload the 32bit syndrome into local RAM
 	// 2. Shift the syndrome back into the ECC register in reverse order
@@ -254,9 +254,9 @@ int main(void)
 	uint8_t error_pattern_a = bitswap(c) >> (8-(shifts % 8));
 	uint8_t error_pattern_b = bitswap(c) << (shifts % 8);
 
-	printf("Shift counter: %lu bits (%lu bytes, %lu remainder)\n", shifts, shifts/8, shifts%8);
-	printf("Byte offset: %lu\n", byte_ofs);
-	printf("Bit offsets: %lu %lu\n", bit_ofs, bit_ofs_b);
+	printf("Shift counter : %lu bits (%lu bytes, %lu remainder)\n", shifts, shifts/8, shifts%8);
+	printf("Byte offset   : %lu\n", byte_ofs);
+	printf("Bit offsets   : %lu %lu\n", bit_ofs, bit_ofs_b);
 
 	printf("Original bytes: %02X %02X\n", ec_z[byte_ofs], ec_z[byte_ofs+1]);
 	printf("Error patterns: %02X %02X\n", error_pattern_a, error_pattern_b);
