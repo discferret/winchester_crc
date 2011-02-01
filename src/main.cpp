@@ -72,10 +72,12 @@ uint32_t crc32(uint32_t initval, unsigned char * data, size_t len)
 		crc ^= (x << (32-8));
 
 		for (int j=0; j<8; j++) {
-			if (crc & 0x80000000)
-				crc = (crc << 1) ^ POLY;
-			else
-				crc = crc << 1;
+			unsigned char feedback = (crc >> 31);
+
+			crc = crc << 1;
+
+			if (feedback)
+				crc ^= POLY;
 		}
 	}
 
